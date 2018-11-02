@@ -1,0 +1,154 @@
+
+##### necessary functions
+
+#################################################################
+G.fun <- function(u){
+      if(r > 0){
+      results = log(((1+r*u)<=0)*10^(-3)+(1+r*u>0)*(1+r*u))/r
+      } else results = u
+      return(results)
+}
+
+
+G.inv <- function(u){
+   if (r > 0) {
+      results = (exp(u*r)-1)/r
+      } else results = u
+      return(results)
+}
+
+##############################################################
+
+phi <- function(mu,r){
+
+results = (1/r)^(1/r)*mu^(1/r-1)*exp(-1/r*mu)/gamma(1/r)
+
+return(results)
+}
+
+############################################
+
+plik = function(b){
+
+loops = 0
+
+lam.hat = lambda.hat
+
+diff.lam = 100
+
+############ judge start ##############
+
+while(diff.lam >= tol && loops < max.loops){
+
+W1 = rowSums(matrix(rep(lam.hat, each=n), n, k)*
+matrix(rep(exp(as.matrix(x)%*%as.matrix(b)),k),n,k)*Ind.D1) #### n by 1
+
+V = rowSums(matrix(rep(lam.hat, each=n), n, k)*
+matrix(rep(exp(as.matrix(x)%*%as.matrix(b)),k),n,k)*Ind.L) #### n by 1
+
+W = rowSums(matrix(rep(lam.hat, each=n), n, k)*
+matrix(rep(exp(as.matrix(x)%*%as.matrix(b)),k),n,k)*Ind.R) #### n by 1
+
+dd = exp(-G.fun(V))-exp(-G.fun(W))
+dd[which(dd==0)] <- 1
+
+if(r >0){
+E.mu = d2*((r*V+1)^(-r^(-1)-1)-(r*W+1)^(-r^(-1)-1))/dd +
+   d3*(r*V+1)^(-r^(-1)-1)/exp(-G.fun(V)) +
+   Delta*(1+r)*(r*W1+1)^(-1)    #### n by 1
+   } else{ E.mu = 1 
+            }
+
+
+
+WV = W - V
+WV[which(WV==0)] = 1
+
+if(r >0){
+
+int.mu = rep(1,n)
+
+for(i in 1:n){
+int.mu[i] = sum((cc$x*(exp(-cc$x*V[i])-exp(-cc$x*W[i]))*(1-exp(-WV[i]*cc$x))^(-1)*phi(cc$x,r)*exp(cc$x))*cc$w)
+}
+
+}
+
+if(r>0){
+
+E.Zd2 = matrix(rep(lam.hat, each= n), n, k)*matrix(rep(exp(as.matrix(x)%*%as.matrix(b)),k),n,k)*
+(matrix(rep(int.mu,k),n,k)/dd*(Ind.R*(1-Ind.L)) + matrix(rep(E.mu,k),n,k)*(1-Ind.R))
+      }else {
+E.Zd2 = matrix(rep(lam.hat, each=n), n, k)*matrix(rep(exp(as.matrix(x)%*%as.matrix(b)),k),n,k)*
+((1-exp(-WV))^(-1)*(Ind.R*(1-Ind.L)) + matrix(rep(E.mu,k),n,k)*(1-Ind.R))
+             }
+
+E.Zd3 = matrix(rep(lam.hat, each=n), n, k)*
+matrix(rep(exp(as.matrix(x)%*%as.matrix(b)),k),n,k)*matrix(rep(E.mu,k),n,k)*(1-Ind.L)
+
+
+E.ZDelta = Ind.D+
+matrix(rep(lam.hat, each=n), n, k)*
+matrix(rep(exp(as.matrix(x)%*%as.matrix(b)),k),n,k)*E.mu*(1-Ind.D1)
+
+
+E.Z = d2*E.Zd2 + d3*E.Zd3 + Delta*E.ZDelta ####  n by k
+
+lam.est = apply(E.Z,2,sum)/sum(E.mu*exp(as.matrix(x)%*%as.matrix(b)))
+
+if(any(is.na(lam.est))) lam.est = runif(k,0,1/n)
+
+diff.lam = sum(abs(lam.est-lam.hat))
+
+lam.hat = lam.est
+
+loops = loops+1
+
+}
+
+######### judge end #########
+
+W1 = rowSums(matrix(rep(lam.hat, each=n), n, k)*
+matrix(rep(exp(as.matrix(x)%*%as.matrix(b)),k),n,k)*Ind.D1) #### n by 1
+
+V = rowSums(matrix(rep(lam.hat, each=n), n, k)*
+matrix(rep(exp(as.matrix(x)%*%as.matrix(b)),k),n,k)*Ind.L) #### n by 1
+
+
+W = rowSums(matrix(rep(lam.hat, each=n), n, k)*
+matrix(rep(exp(as.matrix(x)%*%as.matrix(b)),k),n,k)*Ind.R) #### n by 1
+
+#######################################################################
+
+if(r>0){
+LL =Delta*rowSums(matrix(rep(lam.hat, each=n), n, k)*
+matrix(rep(exp(as.matrix(x)%*%as.matrix(b)),k),n,k)*Ind.D)*(r*W1+1)^(-r^(-1)-1)
+   }else { 
+LL =Delta*rowSums(matrix(rep(lam.hat, each=n), n, k)*
+matrix(rep(exp(as.matrix(x)%*%as.matrix(b)),k),n,k)*Ind.D)*exp(-W1)
+              }
+
+
+L1 = LL[LL!=0]
+
+VW =exp(-G.fun(V))-exp(-G.fun(W))
+
+VW[VW<=0] = 1
+
+result = sum(log(L1))  + 
+       sum(d2*log(VW)) - sum(d3*G.fun(V))
+
+#######################################################################
+
+return(result)
+}
+
+###############################
+
+
+
+
+
+
+
+

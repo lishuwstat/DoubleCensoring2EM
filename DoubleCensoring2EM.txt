@@ -1,0 +1,325 @@
+
+
+##### Before running the code below, one needs to run the necessary functions in the file "ness.fun.txt".
+
+##### Also, one needs to specify the following  data characteristics according to the real data
+
+
+##n   ####the sample size
+##p   #### the dimension of the covariates
+##x   #### n by p matrix containing the covariates 
+##SL ##### n-dimensional vetor containg left censoring times for the initial event
+##SR ##### n-dimensional vetor containg right censoring times for the initial event
+##TL ##### n-dimensional vetor containg left censoring times for the subsequent event
+##TR ##### n-dimensional vetor containg right censoring times for the subsequent event
+
+##### if the  initial event times can be observed exactly, then we set SL = SR
+##### if the  subsequent event times can be observed exactly, then we set TL = TR
+ 
+##################  start 
+
+library(pracma)
+
+library(npsurv)
+
+r = 0  ### the model used in the analysis 
+
+##### r = 0 cox model
+
+##### r = 1   proportional odds model
+
+M = 20  ##### number of the imputation
+
+d2 = 1*(TR < Inf&TR != TL)
+d3 = 1*(TR == Inf)
+Delta = 1*(TR == TL)
+
+#####  Delta ##indicator of the failure time observed exactly
+#####  d2 ##interval censored indicator
+#####  d3 ##right censored indicator
+
+
+tol = 0.001
+
+max.loops = 500
+
+beta1 = var.b.M = matrix(0,M,p)
+
+loop = logL = rep(0,M)
+
+cc  <-  gaussLaguerre(17)
+
+######################## calculate survival function for S
+
+Surv = npsurv(cbind(SL,SR))
+
+#########plot(npsurv(cbind(SL,SR)), col="red") 
+
+prob = Surv$f$p
+
+Jpoints = Surv$f$left
+
+m = 1
+
+for(m in 1:M){
+
+S.new = c() ####### imputation
+
+i = 1
+for(i in 1:n){
+
+index = (SL[i]<=Jpoints)*(Jpoints<=SR[i])
+
+mass.prob = (index*prob)[(index*prob)!=0]/sum((index*prob)[(index*prob)!=0])
+
+if(length(Jpoints[as.logical(index)])>1){
+S.new[i] = sample(Jpoints[as.logical(index)], size=1, prob = mass.prob)
+} else S.new[i] = Jpoints[as.logical(index)]
+
+}
+
+loops = 0
+
+diff.theta = 100
+
+#####  Ft  ##observed failure time
+
+Ft = (TL - S.new)*Delta
+
+L = TL - S.new
+
+R = TR - S.new
+
+### observation times L R
+
+LL = (d2+d3)*L
+RR = (d2)*R
+order.LR = unique(sort(c(LL[ LL!= 0  ],RR[RR!= 0 & RR < Inf], Ft[Ft!=0]))) ### jump points
+
+k = length(order.LR)
+
+Ind.L = matrix(rep(order.LR,each =n),n,k) < matrix(rep(L,k),n,k)
+Ind.R = matrix(rep(order.LR,each =n),n,k) <= matrix(rep(R,k),n,k)
+Ind.D = matrix(rep(order.LR,each = n),n,k) == matrix(rep(Ft,k),n,k)
+Ind.D1 = matrix(rep(order.LR,each = n),n,k) <= matrix(rep(Ft,k),n,k)
+
+
+b.ini = rep(0.5,p)
+
+lambda.ini = rep(10^(-2),k)
+
+b.hat = b.ini
+
+lambda.hat = lambda.ini
+
+loops = 0
+diff.theta = 100
+
+############ judge start ##############
+
+while(diff.theta >= tol && loops < max.loops){
+
+W1 = rowSums(matrix(rep(lambda.hat, each=n), n, k)*
+matrix(rep(exp(as.matrix(x)%*%as.matrix(b.hat)),k),n,k)*Ind.D1) #### n by 1
+
+V = rowSums(matrix(rep(lambda.hat, each=n), n, k)*
+matrix(rep(exp(as.matrix(x)%*%as.matrix(b.hat)),k),n,k)*Ind.L) #### n by 1
+
+
+W = rowSums(matrix(rep(lambda.hat, each=n), n, k)*
+matrix(rep(exp(as.matrix(x)%*%as.matrix(b.hat)),k),n,k)*Ind.R) #### n by 1
+
+
+dd = exp(-G.fun(V))-exp(-G.fun(W))
+dd[which(dd==0)] <- 1
+
+
+if(r >0){
+E.mu = d2*((r*V+1)^(-r^(-1)-1)-(r*W+1)^(-r^(-1)-1))/dd +
+   d3*(r*V+1)^(-r^(-1)-1)/exp(-G.fun(V)) +
+   Delta*(1+r)*(r*W1+1)^(-1)    #### n by 1
+   } else{ E.mu = 1 
+            }
+
+
+
+WV = W - V
+WV[which(WV==0)] = 1
+
+
+if(r >0){
+
+int.mu = rep(1,n)
+
+for(i in 1:n){
+int.mu[i] = sum((cc$x*(exp(-cc$x*V[i])-exp(-cc$x*W[i]))*(1-exp(-WV[i]*cc$x))^(-1)*phi(cc$x,r)*exp(cc$x))*cc$w)
+}
+
+}
+
+if(r>0){
+
+E.Zd2 = matrix(rep(lambda.hat, each= n), n, k)*matrix(rep(exp(as.matrix(x)%*%as.matrix(b.hat)),k),n,k)*
+(matrix(rep(int.mu,k),n,k)/dd*(Ind.R*(1-Ind.L)) + matrix(rep(E.mu,k),n,k)*(1-Ind.R))
+      }else {
+E.Zd2 = matrix(rep(lambda.hat, each=n), n, k)*matrix(rep(exp(as.matrix(x)%*%as.matrix(b.hat)),k),n,k)*
+((1-exp(-WV))^(-1)*(Ind.R*(1-Ind.L)) + matrix(rep(E.mu,k),n,k)*(1-Ind.R))
+             }
+
+
+E.Zd3 = matrix(rep(lambda.hat, each=n), n, k)*
+matrix(rep(exp(as.matrix(x)%*%as.matrix(b.hat)),k),n,k)*matrix(rep(E.mu,k),n,k)*(1-Ind.L)
+
+E.ZDelta = Ind.D+
+matrix(rep(lambda.hat, each=n), n, k)*
+matrix(rep(exp(as.matrix(x)%*%as.matrix(b.hat)),k),n,k)*E.mu*(1-Ind.D1)
+
+
+E.Z = d2*E.Zd2 + d3*E.Zd3 + Delta*E.ZDelta ####  n by k
+
+
+lambda.est = apply(E.Z,2,sum)/sum(E.mu*exp(as.matrix(x)%*%as.matrix(b.hat)))
+
+if(any(is.na(lambda.est))) lambda.est = lambda.ini
+
+num1 = t(x)%*%as.matrix(E.mu*exp(as.matrix(x)%*%as.matrix(b.hat))) #### p by 1
+denom1 = sum(E.mu*exp(as.matrix(x)%*%as.matrix(b.hat)))   #####  1 by 1
+
+U.1 = t(as.matrix(x - matrix(rep(num1/denom1,each=n),n,p)))%*%as.matrix(apply(
+as.matrix(E.Z),1,sum))
+
+II.1 = -(t(as.matrix(x))%*%(as.vector(E.mu*exp(x%*%b.hat))*x)*denom1-
+as.matrix(num1)%*%t(as.matrix(num1)))/denom1^2
+
+I.1 = sum(E.Z)*II.1
+
+b.est = b.hat - solve(I.1)%*%U.1
+
+if(any(is.na(b.est))) b.est = b.ini
+
+diff.b = abs(b.est-b.hat)
+diff.lambda = abs(lambda.est-lambda.hat)
+
+
+diff.theta =  sum(diff.b,diff.lambda)
+
+b.hat = b.est
+lambda.hat = lambda.est
+
+loops = loops+1
+
+}
+
+######### judge end #########
+
+
+######variance
+
+
+W1 = rowSums(matrix(rep(lambda.hat, each=n), n, k)*
+matrix(rep(exp(as.matrix(x)%*%as.matrix(b.hat)),k),n,k)*Ind.D1) #### n by 1
+
+V = rowSums(matrix(rep(lambda.hat, each=n), n, k)*
+matrix(rep(exp(as.matrix(x)%*%as.matrix(b.hat)),k),n,k)*Ind.L) #### n by 1
+
+
+W = rowSums(matrix(rep(lambda.hat, each=n), n, k)*
+matrix(rep(exp(as.matrix(x)%*%as.matrix(b.hat)),k),n,k)*Ind.R) #### n by 1
+
+#######################################################################
+
+if(r>0){
+LL =Delta*rowSums(matrix(rep(lambda.hat, each=n), n, k)*
+matrix(rep(exp(as.matrix(x)%*%as.matrix(b.hat)),k),n,k)*Ind.D)*(r*W1+1)^(-r^(-1)-1)
+   }else { 
+LL =Delta*rowSums(matrix(rep(lambda.hat, each=n), n, k)*
+matrix(rep(exp(as.matrix(x)%*%as.matrix(b.hat)),k),n,k)*Ind.D)*exp(-W1)
+              }
+
+L1 = LL[LL!=0]
+
+VW =exp(-G.fun(V))-exp(-G.fun(W))
+
+VW[VW<=0] = 1
+
+M1 = sum(log(L1))  + 
+       sum(d2*log(VW)) - sum(d3*G.fun(V))
+
+
+h = n^(-0.5)  #### tuning parameter
+
+E = h * diag(rep(1,p))  ### p by p
+
+Me = matrix(0,p,1)
+
+Mee = matrix(0,p,p)
+
+for (i in 1:p){
+
+betaEi = b.hat + E[,i]
+
+Me[i] = plik(betaEi)
+
+for(j in 1:p){
+
+betaEiEj = b.hat + E[,i] + E[,j]
+
+Mee[i,j] = plik(betaEiEj)
+
+}
+
+}
+
+
+I = -(Mee - Me%*%rep(1,p) - t(Me%*%rep(1,p)) + M1*matrix(1,p,p))/(n*h^2)
+
+var.b = diag(solve(I)/n)
+
+
+###################################################
+
+beta1[m,] = b.hat
+
+var.b.M[m,] =  var.b
+
+loop[m] = loops
+
+
+}
+
+
+var.new1 = (1+1/M)*(apply(beta1,2,sd))^2
+
+var.new2 =  apply(var.b.M,2,mean)
+
+std.new = sqrt(var.new1+var.new2)
+
+beta.hat = apply(beta1,2,mean)
+
+p1.value = c()
+
+p1.value = 2*(1 - pnorm(abs(beta.hat), 0, std.new))
+
+
+beta.hat
+
+std.new
+
+p1.value
+
+
+#### end
+
+
+
+
+
+
+
+
+
+
+
+
+
+
